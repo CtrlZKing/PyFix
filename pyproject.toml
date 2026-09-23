@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyfix"
+name = "PyFix-debugger"
 version = "2.0.0"
 description = "Python errors, explained and fixed."
 readme = "README.md"
