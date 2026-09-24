@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PyFix-debugger"
-version = "2.0.0"
+version = "2.0.1"
 description = "Python errors, explained and fixed."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "PyFix" }]
+authors = [
+    { name = "Aditya Barua", email = "aditya.barua.dev.official@gmail.com" }
+]
 dependencies = []
 
 [project.scripts]
