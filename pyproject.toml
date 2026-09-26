@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pyfix"
+name = "PyFix-debugger"
 version = "3.1.0"
 description = "Python errors, explained and fixed."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "PyFix" }]
+authors = [{ name = "Aditya Barua", email = "aditya.barua.dev.official@gmail.com" }]
 dependencies = []
 
 [project.scripts]
