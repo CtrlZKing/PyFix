@@ -1,10 +1,15 @@
-"""Explanation-only detectors for Syntax/Indentation/Tab errors.
+"""Fallback, explanation-only detectors for Syntax/Indentation/Tab errors.
 
-PyFix does not attempt to automatically rewrite broken syntax — that
-would be exactly the kind of "reckless automatic code modifier"
-behavior the product explicitly rejects. These detectors exist to
-turn a cryptic pointer-and-caret traceback into a plain-English
-explanation with a precise location.
+As of 3.0, the small set of SyntaxError/IndentationError shapes PyFix
+can classify with real confidence (missing block colon, mismatched
+bracket, unambiguous stray indent) are handled *before* these by
+:class:`pyfix.detectors.structural_syntax.StructuralSyntaxDetector`,
+which can propose an actual repair. These detectors are the fallback
+for everything else — PyFix still refuses to guess at ambiguous or
+unclassified syntax problems, because that would be exactly the kind
+of "reckless automatic code modifier" behavior the product explicitly
+rejects. They exist to turn a cryptic pointer-and-caret traceback into
+a plain-English explanation with a precise location.
 """
 
 from __future__ import annotations

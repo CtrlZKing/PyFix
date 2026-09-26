@@ -10,13 +10,22 @@ from pathlib import Path
 from pyfix.analysis import level2_checks as checks
 from pyfix.analysis.scope import StaticAnalyzer
 from pyfix.analysis.static_call_checks import check_undefined_variables, check_wrong_argument_counts
+from pyfix.analysis.structural import analyze_structural, structural_finding_to_diagnostic
 from pyfix.diagnostics.models import Diagnostic
 
 
 def run_static_analysis(source: str, file_path: Path) -> list[Diagnostic]:
     analyzer = StaticAnalyzer(source)
     if not analyzer.is_valid:
-        return []  # a SyntaxError file is handled by the syntax detector, not here
+        # The file doesn't parse at all, so none of the checks below
+        # (which all need a valid AST) can run. That used to mean
+        # "report nothing" — instead, hand off to the structural
+        # analyzer so a whole-file scan still surfaces *something*
+        # actionable instead of going silent on the first SyntaxError.
+        finding = analyze_structural(source)
+        if finding is not None:
+            return [structural_finding_to_diagnostic(finding, file_path)]
+        return []
 
     tree = analyzer.tree
     lines = source.splitlines()

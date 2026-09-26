@@ -13,6 +13,7 @@ src/pyfix/analysis/level2_checks.py
 src/pyfix/analysis/runner.py
 src/pyfix/analysis/scope.py
 src/pyfix/analysis/static_call_checks.py
+src/pyfix/analysis/structural.py
 src/pyfix/analysis/typo_resolution.py
 src/pyfix/cli/__init__.py
 src/pyfix/cli/main.py
@@ -25,6 +26,7 @@ src/pyfix/detectors/base.py
 src/pyfix/detectors/file_not_found.py
 src/pyfix/detectors/module_not_found.py
 src/pyfix/detectors/name_error_import.py
+src/pyfix/detectors/structural_syntax.py
 src/pyfix/detectors/syntax_errors.py
 src/pyfix/detectors/wrong_arguments.py
 src/pyfix/detectors/wrong_environment.py
@@ -48,8 +50,12 @@ src/pyfix/source/__init__.py
 src/pyfix/source/ast_utils.py
 src/pyfix/source/import_editor.py
 src/pyfix/source/rename_editor.py
+src/pyfix/state/__init__.py
+src/pyfix/state/diagnostic_log.py
+src/pyfix/state/diff_store.py
 src/pyfix/traceback/__init__.py
 src/pyfix/traceback/parser.py
 src/pyfix/ui/__init__.py
 src/pyfix/ui/console.py
 tests/test_traceback_parser.py
+tests/test_version.py

@@ -19,6 +19,7 @@ from pyfix.detectors.base import DetectionContext, Detector
 from pyfix.detectors.file_not_found import FileNotFoundDetector
 from pyfix.detectors.module_not_found import ModuleNotFoundDetector
 from pyfix.detectors.name_error_import import NameErrorImportDetector
+from pyfix.detectors.structural_syntax import StructuralSyntaxDetector
 from pyfix.detectors.syntax_errors import IndentationErrorDetector, SyntaxErrorDetector
 from pyfix.detectors.wrong_arguments import WrongArgumentsDetector
 from pyfix.detectors.wrong_environment import WrongEnvironmentDetector
@@ -38,6 +39,7 @@ DEFAULT_DETECTORS: list[Detector] = [
     WrongArgumentsDetector(),
     AttributeTypoDetector(),
     FileNotFoundDetector(),
+    StructuralSyntaxDetector(),
     SyntaxErrorDetector(),
     IndentationErrorDetector(),
 ]

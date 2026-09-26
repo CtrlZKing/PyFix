@@ -46,11 +46,20 @@ pyfix run game.py --dry-run  # show what PyFix would do, change nothing
 pyfix run game.py --yes      # auto-approve safe (non-destructive) fixes
 pyfix doctor                 # scan the current project: environment, deps, AND code issues
 pyfix analyze file.py        # static, no-execution multi-issue report for one file
+pyfix analyze file.py --json # same, as machine-readable JSON (for editors/CI)
 pyfix explain traceback.txt  # explain a saved traceback in plain English
 pyfix environment            # show the detected Python interpreter/venv
 pyfix dependencies           # compare requirements.txt vs. what's installed
+pyfix diff                   # show the most recent PyFix-proposed/applied diff
+pyfix logs                   # local diagnostic log of everything PyFix has found/done
+pyfix logs --advanced        # same, with full per-issue detail
+pyfix clear-logs             # clear the local diagnostic log (never touches source/backups/Git)
 pyfix undo                   # revert the most recent PyFix edit
 ```
+
+`--beginner` / `--advanced` (mutually exclusive) work either before or
+after the subcommand — `pyfix --advanced run file.py` and
+`pyfix run file.py --advanced` are equivalent.
 
 ## What V1 (Level 1) does
 
@@ -62,7 +71,7 @@ Permission → Execution → Verification pipeline, for:
 | `ModuleNotFoundError` / `ImportError` | Resolves the import name to a real PyPI package (installed-metadata → verified mapping table → cautious heuristic) and proposes `<current-python> -m pip install <package>` |
 | Package installed in the **wrong environment** | Detects when the missing package exists under a *different* interpreter than the one running your program |
 | `NameError` from a forgotten `import` | AST-based: checks whether the name is used like a module and maps to a real package |
-| `SyntaxError`, `IndentationError`, `TabError` | Explanation-only, with precise file/line location |
+| `SyntaxError`, `IndentationError`, `TabError` | The specific, unambiguous cases (missing block colon, mismatched bracket, unambiguous stray indent — see "Structural Syntax & Formatting Intelligence" below) are auto-fixable; everything else remains explanation-only, with precise file/line location |
 | `FileNotFoundError` | Suggests similarly-named files in the project — never changes a path automatically |
 | `pyfix doctor` | Python version, virtualenv detection, missing imports, syntax validity, `requirements.txt`, Git status, **and now code-level static analysis** |
 | `pyfix dependencies` | Compares `requirements.txt` pins against what's actually installed |
@@ -270,4 +279,197 @@ All limitations documented in the original V1 README still apply
 except where superseded above (undefined-variable typos and unexpected-
 keyword typos are no longer "explanation-only" — they're now
 Level-2's flagship safe auto-fixes).
+
+## 3.0.0 — Structural Syntax & Formatting Intelligence, and the "keep going" fix
+
+This is a scoped, real (not aspirational) increment toward the 3.0
+vision, not a full rewrite of every subsystem described in the design
+notes. What actually shipped in this pass:
+
+- **New subsystem: `pyfix.analysis.structural`.** Uses Python's own
+  PEG-parser diagnostics (`SyntaxError.msg` / `.lineno` / `.offset` —
+  themselves derived from real grammar analysis, not regex keyword
+  matching) to classify a specific, well-understood set of structural
+  problems:
+  - missing block colon (`if`/`elif`/`else`/`for`/`while`/`def`/
+    `class`/`try`/`except`/`finally`/`with`/`match`/`case`) — **HIGH
+    confidence, auto-fixable**
+  - mismatched closing bracket (e.g. `(1, 2, 3]`) — **HIGH confidence,
+    auto-fixable** for a single, unambiguous mismatch
+  - unclosed bracket — explanation-only; PyFix does not guess where
+    the closing bracket belongs
+  - missing block body (`if x:` with nothing indented under it) —
+    explanation-only; PyFix does not invent the missing statement
+  - unexpected/stray indentation — auto-fixable only in the
+    unambiguous case (previous line doesn't open a block); otherwise
+    explanation-only
+  - Correctly ignores multi-line expressions/collections, multi-line
+    strings, and comments containing block keywords — it's driven by
+    the parser's own error location, not string scanning.
+- **`StructuralSyntaxDetector`** wires this into the existing
+  detect→explain→propose→ask→apply→verify pipeline
+  (`pyfix.core.orchestrator`), ahead of the old explanation-only
+  `SyntaxErrorDetector`/`IndentationErrorDetector`, which remain as the
+  honest fallback for everything this subsystem can't yet classify.
+- **`run_static_analysis`** (the engine behind `pyfix analyze` /
+  `pyfix doctor`) no longer returns nothing the instant a file fails to
+  parse — it now runs the structural analyzer so a whole-file scan
+  still reports the most common beginner bug class instead of going
+  silent.
+- **The core architectural bug is fixed:** `pyfix run` used to `return`
+  immediately — ending the entire session — the moment it hit one
+  error it couldn't recognize or couldn't safely auto-fix. It now
+  explains that issue as before, then runs a whole-file static scan
+  and reports anything else it can see, clearly labeled as
+  execution-independent static findings. One unsolvable error no
+  longer hides every other detectable one.
+- **Public Python API** (`import pyfix`): `pyfix.analyze(path)`,
+  `pyfix.diagnose(path)`, `pyfix.apply_repair(path, proposal)` — thin,
+  documented wrappers around the existing internals, not a parallel
+  implementation. `repair()`/`verify()` one-shot functions were
+  deliberately **not** added, because PyFix's permission model requires
+  an explicit approval step that a bare library call has no user to
+  give; callers get a `RepairProposal` and decide.
+- **Version bumped to 3.0.0** across `pyproject.toml`, `pyfix
+  --version`, and `pyfix.__version__`.
+- **39 new tests** (`tests/structural/`, `tests/cli/`,
+  `tests/test_version.py`), all passing alongside the full pre-existing
+  suite — see the development notes below for how this was verified in
+  a network-disabled sandbox.
+
+### What was NOT done in this 3.0.0 pass
+
+The three 3.0 design documents describe a much larger system —
+root-cause dependency graphs across multiple errors, project-wide
+multi-file analysis, AI-assisted whole-file reconstruction, a repair-
+loop/fingerprinting engine, test-aware repair, library/API signature
+introspection, and more. None of that was built in this pass. What's
+here is a real, tested, working slice: the specific "stop on one
+unsolvable issue" architectural bug called out as the top priority in
+the design notes is fixed, and one full new detection subsystem
+(structural syntax) was added end-to-end, rather than stubbing a
+larger surface area with fake or partial implementations.
+`pyfix logs`, `pyfix clear-logs`, `pyfix diff`, and JSON output landed
+in 3.1.0 (below) — see that section for the corresponding audit.
+
+## 3.1.0 — completing the advertised CLI surface, and an honest audit
+
+3.0.0 shipped one real subsystem end-to-end. This pass is a full
+repository audit: everything the CLI, README, and public API
+*advertised* was checked against what actually ran, and every gap
+found was either implemented for real or the advertising was
+corrected — nothing was left as a `pass`/`NotImplementedError` stub or
+silently removed.
+
+### Audit findings
+
+The only genuine stubs in the whole codebase were three CLI
+subcommands (grep for `TODO`/`FIXME`/`NotImplementedError`/`stub`
+across `src/` turned up nothing else):
+
+```python
+if args.command in ("logs", "clear-logs", "diff"):
+    print("This feature is not implemented yet.")
+    return 0
+```
+
+Beyond that, one real CLI ergonomics bug was found and is a common
+source of user confusion: `--beginner`/`--advanced` only worked
+*before* the subcommand (`pyfix --advanced run f.py`); the same flag
+*after* the subcommand or the script path (`pyfix run f.py --advanced`,
+which is by far the more natural place to type it) raised
+`unrecognized arguments`. `analyze` additionally had its own
+independent `--advanced` flag definition that (silently, due to how
+argparse subparser defaults interact with a top-level default) could
+overwrite a `--advanced` passed before the subcommand back to `False`.
+
+Everything else audited — the repair loop, confidence/risk levels,
+backups/undo, permission prompts, Git-safety warnings, environment/
+dependency checks, `doctor`/`analyze`/`explain`, and the existing 119
+tests — was already real and working, and none of it was rewritten.
+
+### What was implemented
+
+- **`pyfix logs`** — a real, persistent, per-project diagnostic log
+  (`pyfix/state/diagnostic_log.py`), JSON-Lines–backed so one corrupted
+  line can never take down the rest of the log or crash the command.
+  One entry is recorded per detected issue (not per CLI invocation) by
+  `pyfix run`, `pyfix explain`, and `pyfix undo`, carrying category,
+  severity, confidence, what happened, the proposed repair, whether it
+  was applied/verified/rolled back, the repair-loop iteration number,
+  and the PyFix version — never environment variables, secrets, or raw
+  process state. `--advanced` shows full per-entry detail; the default
+  view is one line per entry. `pyfix logs --limit N` caps how many are
+  shown.
+- **`pyfix clear-logs`** — deletes only the log file above. It always
+  reports the exact path and entry count before doing anything,
+  requires an interactive `[Y/N]` confirmation unless `--yes` is
+  passed, and is a safe no-op (not an error) when there's nothing to
+  clear or when called repeatedly. It cannot touch source files,
+  `.pyfix/backups`, the undo log, or `.git` — it only ever unlinks the
+  one `logs.jsonl` path it owns.
+- **`pyfix diff`** — persists the most recent proposed *or* applied
+  diff (`pyfix/state/diff_store.py`, one small JSON file, overwritten
+  on each new proposal — not a growing history) so it can be retrieved
+  from a separate, later `pyfix diff` invocation. Reports clearly
+  whether the diff was applied or only proposed, handles "nothing yet"
+  and a corrupted state file identically (an honest "no diff
+  available," never a crash or a fabricated diff), and supports
+  multi-file proposals.
+- **The CLI flag-ordering bug is fixed.** `--beginner`/`--advanced` now
+  work before the subcommand, after it, or after the target file, for
+  every subcommand that renders a proposal or diagnostic (`run`,
+  `analyze`, `doctor`, `explain`, `logs`). The two flags are mutually
+  exclusive even when split across those positions (e.g. `pyfix
+  --beginner run f.py --advanced` is rejected). `analyze`'s duplicate,
+  independent `--advanced` definition was removed in favor of the
+  shared mechanism.
+- **`pyfix analyze --json`** — structured, schema-stable JSON (file,
+  issue count, and one object per issue with category/severity/
+  confidence/location/evidence/proposed-fix-summary). Plain
+  `json.dumps` output only — no ANSI color, no Unicode icons — so it's
+  safe for editors, CI, or another program to parse. `analyze` itself
+  was already, and remains, purely static: it parses and inspects the
+  AST and never executes the target file's top-level code (there's now
+  a regression test asserting this explicitly).
+- **39 new tests** covering all of the above (log corruption/clearing/
+  safety boundaries, diff persistence/corruption, flag ordering in
+  every position, JSON schema and the "never executes" guarantee), plus
+  a permanent regression fixture for the exact "missing colon → typo →
+  out-of-range index" workflow used throughout the design notes.
+- **Version bumped to 3.1.0** — a real, versionable feature addition on
+  top of 3.0.0, not a patch release.
+
+### What was intentionally NOT built in this pass
+
+Per-project state (logs, the last diff) stays inside the existing
+`<project_root>/.pyfix/` directory that backups and the undo log
+already use, rather than introducing a second, global, platform-
+specific state directory (e.g. via `platformdirs`) — that would be a
+bigger architectural change for a benefit (state surviving a project
+being moved/deleted) this pass didn't find a concrete need for, and it
+would be inconsistent with how backups/undo already work. This can be
+revisited if project-wide history across machines is ever needed.
+
+Everything listed as NOT done at the end of the 3.0.0 section above is
+still not done: project-wide/cross-file analysis, a call graph,
+data-flow/root-cause tracing, test-aware repair, repair-loop
+oscillation fingerprinting, and an AI-reasoner interface. These are
+substantial, multi-file subsystems in their own right; claiming a
+partial or fake version of any of them (a `for file in project:
+analyze(file)` loop labeled a "project index," for instance) would be
+exactly the kind of overclaiming this project's own design principles
+rule out. `pyfix run`/`pyfix explain` also do not yet have a `--json`
+mode (only `analyze` does) — the interactive [Y/N] permission flow
+that `run`/`explain` render doesn't yet have a defined
+machine-readable equivalent, and inventing one without a concrete
+consumer in mind risked guessing at a schema.
+
+Windows compatibility was reasoned about (this module uses
+`pathlib.Path` throughout, subprocess calls already use `shell=False`
+and argv lists, and nothing added in this pass hardcodes a POSIX path
+separator or a Unix-only assumption), but none of it was verified by
+actually running on Windows — this sandbox is Linux-only, and claiming
+"tested on Windows" without a Windows machine to test on would itself
+be exactly the kind of false certainty this project exists to avoid.
 
